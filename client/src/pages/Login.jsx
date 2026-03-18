@@ -48,7 +48,7 @@ export default function Login() {
               id="email"
               type="email"
               className="form-input"
-              placeholder="admin@binhaz.com"
+              placeholder="email@email.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
