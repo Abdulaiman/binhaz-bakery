@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    ports:
+      - '4000:4000'
+    environment:
+      - DATABASE_URL=file:/app/server/data/binhaz.db
+      - JWT_SECRET=${JWT_SECRET:-change-this-to-a-strong-secret}
+      - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-admin@binhaz.com}
+      - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-Admin@123}
+      - NODE_ENV=production
+    volumes:
+      - binhaz-data:/app/server/data
+
+volumes:
+  binhaz-data:

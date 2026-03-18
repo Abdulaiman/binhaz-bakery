@@ -1,0 +1,37 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependency directories
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# Environment variables
+.env
+.env.test
+.env.production
+.env.local
+
+# Mac OS
+.DS_Store
+
+# Database Files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+server/dev.db
+server/binhaz.db
+server/data/
+
+# Build outputs
+client/dist
+client/dist-ssr
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo

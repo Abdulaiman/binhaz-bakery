@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String   @id @default(uuid())
+  email              String   @unique
+  passwordHash       String
+  role               String   @default("ADMIN") // SUPER_ADMIN | ADMIN
+  branchId           String?
+  mustChangePassword Boolean  @default(true)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+
+  branch             Branch?       @relation(fields: [branchId], references: [id])
+  attendanceMarked   Attendance[]  @relation("MarkedBy")
+  auditLogs          AuditLog[]
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  address   String?
+  createdAt DateTime @default(now())
+
+  users             User[]
+  employees         Employee[]
+  attendances       Attendance[]
+  payrolls          Payroll[]
+  attendanceLocks   AttendanceLock[]
+}
+
+model Employee {
+  id        String    @id @default(uuid())
+  name      String
+  dailyPay  Float
+  branchId  String
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  branch       Branch         @relation(fields: [branchId], references: [id])
+  attendances  Attendance[]
+  payrollItems PayrollItem[]
+}
+
+model Attendance {
+  id         String   @id @default(uuid())
+  employeeId String
+  branchId   String
+  date       String   // YYYY-MM-DD
+  present    Boolean
+  markedById String
+  createdAt  DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+  branch   Branch   @relation(fields: [branchId], references: [id])
+  markedBy User     @relation("MarkedBy", fields: [markedById], references: [id])
+
+  @@unique([employeeId, date])
+}
+
+model AttendanceLock {
+  id       String @id @default(uuid())
+  branchId String
+  date     String // YYYY-MM-DD
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, date])
+}
+
+model Payroll {
+  id          String   @id @default(uuid())
+  startDate   String   // YYYY-MM-DD
+  endDate     String   // YYYY-MM-DD
+  branchId    String
+  totalAmount Float
+  createdAt   DateTime @default(now())
+
+  branch Branch        @relation(fields: [branchId], references: [id])
+  items  PayrollItem[]
+
+  @@unique([startDate, endDate, branchId])
+}
+
+model PayrollItem {
+  id         String @id @default(uuid())
+  payrollId  String
+  employeeId String
+  daysWorked Int
+  totalPay   Float
+
+  payroll  Payroll  @relation(fields: [payrollId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  action     String
+  entityType String
+  entityId   String?
+  metadata   String?  // JSON string
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
