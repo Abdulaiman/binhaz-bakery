@@ -7,28 +7,13 @@ const { logAudit } = require('../lib/audit');
 const router = express.Router();
 
 // POST /api/payroll/generate
-router.post('/generate', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
+router.post('/generate', authenticate, requireRole('SUPER_ADMIN'), async (req, res) => {
   try {
     const { startDate, endDate, branchId } = req.body;
     const targetBranch = req.user.role === 'SUPER_ADMIN' ? branchId : req.user.branchId;
 
     if (!startDate || !endDate || !targetBranch) {
       return res.status(400).json({ error: 'Start date, end date, and branch are required' });
-    }
-
-    // Check if payroll already exists for this exact range and branch
-    const existing = await prisma.payroll.findUnique({
-      where: {
-        startDate_endDate_branchId: {
-          startDate,
-          endDate,
-          branchId: targetBranch
-        }
-      },
-    });
-
-    if (existing) {
-      return res.status(409).json({ error: 'Payroll already generated for this date range and branch' });
     }
 
     // Get all attendance records for this range and branch
@@ -38,12 +23,21 @@ router.post('/generate', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), asyn
         date: { gte: startDate, lte: endDate },
         present: true,
       },
+      include: {
+        employee: { select: { id: true, dailyPay: true } }
+      }
     });
 
-    // Group by employee
-    const employeeDays = {};
+    // Group by employee and sum up specific daily wages
+    const employeeAggregation = {}; // { [empId]: { daysWorked: 0, totalPay: 0 } }
     attendance.forEach((a) => {
-      employeeDays[a.employeeId] = (employeeDays[a.employeeId] || 0) + 1;
+      if (!employeeAggregation[a.employeeId]) {
+        employeeAggregation[a.employeeId] = { daysWorked: 0, totalPay: 0 };
+      }
+      employeeAggregation[a.employeeId].daysWorked += 1;
+      // Use override wage if set, otherwise fallback to employee standard pay
+      const wage = a.dailyWage !== null ? a.dailyWage : a.employee.dailyPay;
+      employeeAggregation[a.employeeId].totalPay += wage;
     });
 
     // Get all employees for this branch
@@ -61,17 +55,18 @@ router.post('/generate', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), asyn
     const items = [];
 
     // Process employees with attendance
-    for (const [employeeId, daysWorked] of Object.entries(employeeDays)) {
-      const emp = employeeMap[employeeId];
-      if (!emp) continue;
-      const totalPay = daysWorked * emp.dailyPay;
-      totalAmount += totalPay;
-      items.push({ employeeId, daysWorked, totalPay });
+    for (const [employeeId, stats] of Object.entries(employeeAggregation)) {
+      totalAmount += stats.totalPay;
+      items.push({ 
+        employeeId, 
+        daysWorked: stats.daysWorked, 
+        totalPay: stats.totalPay 
+      });
     }
 
     // Include employees with 0 days worked
     employees.forEach((emp) => {
-      if (!employeeDays[emp.id]) {
+      if (!employeeAggregation[emp.id]) {
         items.push({ employeeId: emp.id, daysWorked: 0, totalPay: 0 });
       }
     });
@@ -112,17 +107,15 @@ router.post('/generate', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), asyn
 });
 
 // GET /api/payroll?startDate=&endDate=&branchId=&page=&limit=
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, requireRole('SUPER_ADMIN'), async (req, res) => {
   try {
     const { branchId, page = 1, limit = 20 } = req.query;
     const p = parseInt(page);
     const l = parseInt(limit);
 
     const where = {};
-    if (req.user.role === 'SUPER_ADMIN') {
-      if (branchId) where.branchId = branchId;
-    } else {
-      where.branchId = req.user.branchId;
+    if (req.user.role === 'SUPER_ADMIN' && branchId) {
+      where.branchId = branchId;
     }
 
     const [payrolls, total] = await Promise.all([

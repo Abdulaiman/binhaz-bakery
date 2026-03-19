@@ -48,8 +48,22 @@ function AppRoutes() {
         />
         <Route path="/employees" element={<Employees />} />
         <Route path="/attendance" element={<Attendance />} />
-        <Route path="/payroll" element={<Payroll />} />
-        <Route path="/audit-logs" element={<AuditLogs />} />
+        <Route
+          path="/payroll"
+          element={
+            <ProtectedRoute roles={['SUPER_ADMIN']}>
+              <Payroll />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/audit-logs"
+          element={
+            <ProtectedRoute roles={['SUPER_ADMIN']}>
+              <AuditLogs />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/users"
           element={

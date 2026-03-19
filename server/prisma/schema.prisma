@@ -54,6 +54,7 @@ model Attendance {
   branchId   String
   date       String   // YYYY-MM-DD
   present    Boolean
+  dailyWage  Float?
   markedById String
   createdAt  DateTime @default(now())
 
@@ -84,8 +85,6 @@ model Payroll {
 
   branch Branch        @relation(fields: [branchId], references: [id])
   items  PayrollItem[]
-
-  @@unique([startDate, endDate, branchId])
 }
 
 model PayrollItem {

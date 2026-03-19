@@ -47,13 +47,16 @@ router.post('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, 
 // GET /api/employees?page=&limit=
 router.get('/', authenticate, async (req, res) => {
   try {
-    const { page = 1, limit = 50 } = req.query;
+    const { page = 1, limit = 50, branchId } = req.query;
     const p = parseInt(page);
     const l = parseInt(limit);
     const where = {
       ...branchFilter(req.user),
       deletedAt: null,
     };
+    if (req.user.role === 'SUPER_ADMIN' && branchId) {
+      where.branchId = branchId;
+    }
 
     const [employees, total] = await Promise.all([
       prisma.employee.findMany({

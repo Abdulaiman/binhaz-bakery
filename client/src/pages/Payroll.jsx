@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function Payroll() {
   const { user } = useAuth();
@@ -64,6 +66,54 @@ export default function Payroll() {
       setMessage(`Error: ${err.message}`);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const downloadPDF = (payroll, e) => {
+    e.stopPropagation(); // prevent expanding the row
+    try {
+      const doc = new jsPDF();
+      
+      // Header
+      doc.setFontSize(22);
+      doc.setTextColor(44, 62, 80);
+      doc.text('BINHAZ PREMIUM BAKERY', 14, 22);
+      
+      doc.setFontSize(16);
+      doc.text('Payroll Report', 14, 32);
+      
+      doc.setFontSize(12);
+      doc.setTextColor(100);
+      doc.text(`Branch: ${payroll.branch?.name || 'Unknown'}`, 14, 44);
+      doc.text(`Period: ${payroll.startDate} to ${payroll.endDate}`, 14, 52);
+      doc.text(`Total Amount: N${payroll.totalAmount.toLocaleString()}`, 14, 60);
+      
+      // Table body
+      const tableData = payroll.items.map(item => [
+        item.employee?.name || 'Unknown',
+        `N${(item.employee?.dailyPay || 0).toLocaleString()}`,
+        `${item.daysWorked} days`,
+        `N${item.totalPay.toLocaleString()}`
+      ]);
+      
+      autoTable(doc, {
+        startY: 68,
+        head: [['Employee', 'Standard Rate', 'Days Worked', 'Actual Pay']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [212, 175, 55] }, // Gold color
+      });
+      
+      // Footer
+      const finalY = (doc).lastAutoTable?.finalY || 70;
+      doc.setFontSize(10);
+      doc.setTextColor(150);
+      doc.text(`Generated on ${new Date().toLocaleDateString()}`, 14, finalY + 10);
+      
+      doc.save(`Payroll_${(payroll.branch?.name || 'Branch').replace(/\s+/g, '_')}_${payroll.startDate}_to_${payroll.endDate}.pdf`);
+    } catch (err) {
+      console.error('PDF Generation Error:', err);
+      alert('Could not generate PDF. Please try again.');
     }
   };
 
@@ -152,12 +202,22 @@ export default function Payroll() {
                       {payroll.startDate} to {payroll.endDate}
                     </p>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
+                  <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                     <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--gold)' }}>
                       ₦{payroll.totalAmount.toLocaleString()}
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {payroll.items.length} employees • {expandedId === payroll.id ? '▲' : '▼'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                      <button 
+                        className="btn btn-sm btn-primary" 
+                        onClick={(e) => downloadPDF(payroll, e)}
+                        title="Download PDF"
+                        style={{ padding: '6px 12px', fontWeight: 'bold' }}
+                      >
+                        📄 Download PDF
+                      </button>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {payroll.items.length} employees • {expandedId === payroll.id ? '▲' : '▼'}
+                      </span>
                     </div>
                   </div>
                 </div>

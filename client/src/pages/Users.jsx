@@ -10,6 +10,13 @@ export default function Users() {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterBranchId, setFilterBranchId] = useState('');
+  
+  // Create Admin modal
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminForm, setAdminForm] = useState({ email: '', branchId: '', role: 'ADMIN' });
+  const [adminResult, setAdminResult] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -39,6 +46,26 @@ export default function Users() {
     }
   };
 
+  const handleCreateAdmin = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      const result = await api.createUser({
+        email: adminForm.email,
+        role: adminForm.role,
+        branchId: adminForm.role === 'ADMIN' ? adminForm.branchId : null,
+      });
+      setAdminResult(result);
+      setAdminForm({ email: '', branchId: '', role: 'ADMIN' });
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const filteredUsers = users;
 
   return (
@@ -64,6 +91,11 @@ export default function Users() {
             {pagination.total} USERS
           </div>
           <div className="spacer" />
+          {user?.role === 'SUPER_ADMIN' && (
+            <button className="btn btn-secondary" onClick={() => { setShowAdminModal(true); setAdminResult(null); setError(''); }}>
+              + Create Admin
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -141,6 +173,93 @@ export default function Users() {
               </div>
             )}
           </>
+        )}
+
+        {/* Create Admin Modal */}
+        {showAdminModal && (
+          <div className="modal-overlay" onClick={() => setShowAdminModal(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h2>Create Admin</h2>
+              {error && <div className="alert alert-error">{error}</div>}
+
+              {adminResult ? (
+                <div>
+                  <div className="alert alert-success">
+                    Admin created successfully!
+                  </div>
+                  <div className="card" style={{ marginBottom: 16 }}>
+                    <p style={{ marginBottom: 8 }}><strong>Email:</strong> {adminResult.user.email}</p>
+                    <p style={{ marginBottom: 8 }}><strong>Temporary Password:</strong></p>
+                    <code style={{
+                      display: 'block',
+                      padding: '12px',
+                      background: 'var(--bg-input)',
+                      borderRadius: 'var(--radius-md)',
+                      color: 'var(--gold)',
+                      fontSize: '1.1rem',
+                      fontWeight: 700,
+                      textAlign: 'center'
+                    }}>
+                      {adminResult.temporaryPassword}
+                    </code>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 8 }}>
+                      Share this password securely. The admin will be forced to change it on first login.
+                    </p>
+                  </div>
+                  <button className="btn btn-primary" onClick={() => setShowAdminModal(false)} style={{ width: '100%' }}>
+                    Done
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleCreateAdmin}>
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input
+                      className="form-input"
+                      type="email"
+                      placeholder="admin@example.com"
+                      value={adminForm.email}
+                      onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Role</label>
+                    <select
+                      className="form-input"
+                      value={adminForm.role}
+                      onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
+                    >
+                      <option value="ADMIN">Regular Admin</option>
+                      <option value="SUPER_ADMIN">Super Admin</option>
+                    </select>
+                  </div>
+                  {adminForm.role === 'ADMIN' && (
+                    <div className="form-group">
+                      <label>Assign to Branch</label>
+                      <select
+                        className="form-input"
+                        value={adminForm.branchId}
+                        onChange={(e) => setAdminForm({ ...adminForm, branchId: e.target.value })}
+                        required
+                      >
+                        <option value="">Select branch</option>
+                        {(branches || []).map((b) => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="modal-actions">
+                    <button type="button" className="btn btn-secondary" onClick={() => setShowAdminModal(false)}>Cancel</button>
+                    <button type="submit" className="btn btn-primary" disabled={saving}>
+                      {saving ? <span className="spinner" /> : 'Create Admin'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </>

@@ -6,7 +6,7 @@ const { requireRole } = require('../middleware/rbac');
 const router = express.Router();
 
 // GET /api/audit-logs
-router.get('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
+router.get('/', authenticate, requireRole('SUPER_ADMIN'), async (req, res) => {
   try {
     const { page = 1, limit = 50, action, entityType, userId, branchId, dateFrom, dateTo } = req.query;
     const where = {};
@@ -23,12 +23,6 @@ router.get('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, r
     // Filter by branch via user relation
     if (branchId) {
       where.user = { branchId };
-    }
-
-    // Role-based scoping
-    if (req.user.role === 'ADMIN') {
-      // ADMIN only sees logs from their branch users
-      where.user = { branchId: req.user.branchId };
     }
 
     const [logs, total] = await Promise.all([

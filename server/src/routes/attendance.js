@@ -47,10 +47,12 @@ router.post('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, 
             branchId,
             date,
             present: record.present,
+            dailyWage: record.dailyWage,
             markedById: req.user.id,
           },
           update: {
             present: record.present,
+            dailyWage: record.dailyWage,
             markedById: req.user.id,
           },
         });

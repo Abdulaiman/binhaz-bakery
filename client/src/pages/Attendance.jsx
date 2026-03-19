@@ -50,10 +50,19 @@ export default function Attendance() {
       setPagination(empsData.pagination || { total: 0, pages: 1, page: 1 });
       setLocked(attData.locked);
 
-      // Build attendance map
+      // Build attendance map with wages
       const attMap = {};
       attData.attendance.forEach((a) => {
-        attMap[a.employeeId] = a.present;
+        attMap[a.employeeId] = { 
+          present: a.present, 
+          wage: a.dailyWage !== null ? a.dailyWage : a.employee.dailyPay 
+        };
+      });
+      // For employees not in attData but in employees list, initialize with default pay
+      empsData.employees.forEach(emp => {
+        if (!attMap[emp.id]) {
+          attMap[emp.id] = { present: false, wage: emp.dailyPay };
+        }
       });
       setAttendance(attMap);
     } catch (e) {
@@ -67,7 +76,21 @@ export default function Attendance() {
     if (locked && user?.role !== 'SUPER_ADMIN') return;
     setAttendance((prev) => ({
       ...prev,
-      [empId]: !prev[empId],
+      [empId]: { 
+        ...prev[empId], 
+        present: !prev[empId]?.present 
+      },
+    }));
+  };
+
+  const handleWageChange = (empId, wage) => {
+    if (locked && user?.role !== 'SUPER_ADMIN') return;
+    setAttendance((prev) => ({
+      ...prev,
+      [empId]: { 
+        ...prev[empId], 
+        wage: parseFloat(wage) || 0 
+      },
     }));
   };
 
@@ -77,7 +100,8 @@ export default function Attendance() {
     const branchId = user?.role === 'SUPER_ADMIN' ? selectedBranch : user?.branchId;
     const records = employees.map((emp) => ({
       employeeId: emp.id,
-      present: !!attendance[emp.id],
+      present: !!attendance[emp.id]?.present,
+      dailyWage: attendance[emp.id]?.wage ?? emp.dailyPay
     }));
 
     const payload = { date, branchId, records };
@@ -125,7 +149,7 @@ export default function Attendance() {
     }
   };
 
-  const presentCountOnPage = employees.filter(emp => !!attendance[emp.id]).length;
+  const presentCountOnPage = employees.filter(emp => !!attendance[emp.id]?.present).length;
 
   return (
     <>
@@ -207,25 +231,52 @@ export default function Attendance() {
               {(employees || []).map((emp) => (
                 <div
                   key={emp.id}
-                  className="attendance-row"
+                  className={`attendance-row ${attendance[emp.id]?.present ? 'active' : ''}`}
                   onClick={() => toggleAttendance(emp.id)}
-                  style={{ cursor: (locked && user?.role !== 'SUPER_ADMIN') ? 'default' : 'pointer' }}
+                  style={{ 
+                    cursor: (locked && user?.role !== 'SUPER_ADMIN') ? 'default' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '12px',
+                    borderRadius: 'var(--radius-md)',
+                    marginBottom: '8px',
+                    background: attendance[emp.id]?.present ? 'rgba(212, 175, 55, 0.1)' : 'var(--bg-card)',
+                    border: attendance[emp.id]?.present ? '1px solid var(--gold)' : '1px solid transparent'
+                  }}
                 >
                   <label className="checkbox-wrapper" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
-                      checked={!!attendance[emp.id]}
+                      checked={!!attendance[emp.id]?.present}
                       onChange={() => toggleAttendance(emp.id)}
                       disabled={locked && user?.role !== 'SUPER_ADMIN'}
                     />
                   </label>
-                  <span className="emp-name">{emp.name}</span>
-                  {locked && user?.role !== 'SUPER_ADMIN' ? (
-                    <span className={`badge ${attendance[emp.id] ? 'badge-success' : 'badge-error'}`}>
-                      {attendance[emp.id] ? 'Present' : 'Absent'}
+                  <span className="emp-name" style={{ flex: 1, marginLeft: '12px', fontWeight: 600 }}>{emp.name}</span>
+                  
+                  <div className="emp-pay-control" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Pay: ₦</span>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={attendance[emp.id]?.wage ?? emp.dailyPay}
+                      onChange={(e) => handleWageChange(emp.id, e.target.value)}
+                      disabled={locked && user?.role !== 'SUPER_ADMIN'}
+                      style={{ 
+                        width: '90px', 
+                        padding: '4px 8px', 
+                        fontSize: '0.9rem',
+                        textAlign: 'right',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '4px'
+                      }}
+                    />
+                  </div>
+
+                  {locked && user?.role !== 'SUPER_ADMIN' && (
+                    <span className={`badge ${attendance[emp.id]?.present ? 'badge-success' : 'badge-error'}`} style={{ marginLeft: '12px' }}>
+                      {attendance[emp.id]?.present ? 'Present' : 'Absent'}
                     </span>
-                  ) : (
-                    <span className="emp-pay">₦{emp.dailyPay.toLocaleString()}/day</span>
                   )}
                 </div>
               ))}

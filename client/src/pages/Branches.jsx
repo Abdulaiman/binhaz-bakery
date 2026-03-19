@@ -13,7 +13,7 @@ export default function Branches() {
 
   // Create Admin modal
   const [showAdminModal, setShowAdminModal] = useState(false);
-  const [adminForm, setAdminForm] = useState({ email: '', branchId: '' });
+  const [adminForm, setAdminForm] = useState({ email: '', branchId: '', role: 'ADMIN' });
   const [adminResult, setAdminResult] = useState(null);
 
   const loadBranches = () => {
@@ -52,11 +52,11 @@ export default function Branches() {
     try {
       const result = await api.createUser({
         email: adminForm.email,
-        role: 'ADMIN',
-        branchId: adminForm.branchId,
+        role: adminForm.role,
+        branchId: adminForm.role === 'ADMIN' ? adminForm.branchId : null,
       });
       setAdminResult(result);
-      setAdminForm({ email: '', branchId: '' });
+      setAdminForm({ email: '', branchId: '', role: 'ADMIN' });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -225,19 +225,32 @@ export default function Branches() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Assign to Branch</label>
+                    <label>Role</label>
                     <select
                       className="form-input"
-                      value={adminForm.branchId}
-                      onChange={(e) => setAdminForm({ ...adminForm, branchId: e.target.value })}
-                      required
+                      value={adminForm.role}
+                      onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
                     >
-                      <option value="">Select branch</option>
-                      {(branches || []).map((b) => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
+                      <option value="ADMIN">Regular Admin</option>
+                      <option value="SUPER_ADMIN">Super Admin</option>
                     </select>
                   </div>
+                  {adminForm.role === 'ADMIN' && (
+                    <div className="form-group">
+                      <label>Assign to Branch</label>
+                      <select
+                        className="form-input"
+                        value={adminForm.branchId}
+                        onChange={(e) => setAdminForm({ ...adminForm, branchId: e.target.value })}
+                        required
+                      >
+                        <option value="">Select branch</option>
+                        {(branches || []).map((b) => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="modal-actions">
                     <button type="button" className="btn btn-secondary" onClick={() => setShowAdminModal(false)}>Cancel</button>
                     <button type="submit" className="btn btn-primary" disabled={saving}>
