@@ -15,7 +15,7 @@ function branchFilter(user) {
 // POST /api/employees
 router.post('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
   try {
-    const { name, dailyPay, branchId } = req.body;
+    const { name, dailyPay, branchId, shift } = req.body;
     if (!name || dailyPay === undefined) {
       return res.status(400).json({ error: 'Name and dailyPay are required' });
     }
@@ -25,8 +25,11 @@ router.post('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, 
       return res.status(400).json({ error: 'Branch is required' });
     }
 
+    const validShifts = ['MORNING', 'EVENING', 'BOTH'];
+    const empShift = validShifts.includes(shift) ? shift : 'MORNING';
+
     const employee = await prisma.employee.create({
-      data: { name, dailyPay: parseFloat(dailyPay), branchId: targetBranch },
+      data: { name, dailyPay: parseFloat(dailyPay), branchId: targetBranch, shift: empShift },
     });
 
     await logAudit({
@@ -34,7 +37,7 @@ router.post('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, 
       action: 'CREATE_EMPLOYEE',
       entityType: 'Employee',
       entityId: employee.id,
-      metadata: { name, dailyPay, branchId: targetBranch },
+      metadata: { name, dailyPay, branchId: targetBranch, shift: empShift },
     });
 
     res.status(201).json(employee);
@@ -44,10 +47,10 @@ router.post('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, 
   }
 });
 
-// GET /api/employees?page=&limit=
+// GET /api/employees?page=&limit=&branchId=&shift=
 router.get('/', authenticate, async (req, res) => {
   try {
-    const { page = 1, limit = 50, branchId } = req.query;
+    const { page = 1, limit = 50, branchId, shift } = req.query;
     const p = parseInt(page);
     const l = parseInt(limit);
     const where = {
@@ -56,6 +59,14 @@ router.get('/', authenticate, async (req, res) => {
     };
     if (req.user.role === 'SUPER_ADMIN' && branchId) {
       where.branchId = branchId;
+    }
+
+    // Filter by shift: show employees that match the shift or are marked BOTH
+    if (shift && shift !== 'ALL') {
+      where.OR = [
+        { shift: shift },
+        { shift: 'BOTH' },
+      ];
     }
 
     const [employees, total] = await Promise.all([
@@ -87,7 +98,7 @@ router.get('/', authenticate, async (req, res) => {
 // PUT /api/employees/:id
 router.put('/:id', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
   try {
-    const { name, dailyPay } = req.body;
+    const { name, dailyPay, shift } = req.body;
     const employee = await prisma.employee.findUnique({ where: { id: req.params.id } });
     if (!employee || employee.deletedAt) {
       return res.status(404).json({ error: 'Employee not found' });
@@ -98,12 +109,15 @@ router.put('/:id', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    const validShifts = ['MORNING', 'EVENING', 'BOTH'];
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (dailyPay !== undefined) updateData.dailyPay = parseFloat(dailyPay);
+    if (shift && validShifts.includes(shift)) updateData.shift = shift;
+
     const updated = await prisma.employee.update({
       where: { id: req.params.id },
-      data: {
-        ...(name && { name }),
-        ...(dailyPay !== undefined && { dailyPay: parseFloat(dailyPay) }),
-      },
+      data: updateData,
     });
 
     await logAudit({
@@ -111,7 +125,7 @@ router.put('/:id', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req
       action: 'UPDATE_EMPLOYEE',
       entityType: 'Employee',
       entityId: employee.id,
-      metadata: { name, dailyPay },
+      metadata: { name, dailyPay, shift },
     });
 
     res.json(updated);

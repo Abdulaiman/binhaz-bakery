@@ -2,6 +2,18 @@ import { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
+const SHIFT_OPTIONS = [
+  { value: 'MORNING', label: '🌅 Morning' },
+  { value: 'EVENING', label: '🌙 Evening' },
+  { value: 'BOTH', label: '🔄 Both' },
+];
+
+const SHIFT_BADGES = {
+  MORNING: { label: '🌅 Morning', className: 'badge-info' },
+  EVENING: { label: '🌙 Evening', className: 'badge-gold' },
+  BOTH: { label: '🔄 Both', className: 'badge-success' },
+};
+
 export default function Employees() {
   const { user } = useAuth();
   const [employees, setEmployees] = useState([]);
@@ -11,17 +23,18 @@ export default function Employees() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ name: '', dailyPay: '', branchId: '' });
+  const [form, setForm] = useState({ name: '', dailyPay: '', branchId: '', shift: 'MORNING' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const [filterBranchId, setFilterBranchId] = useState('');
+  const [filterShift, setFilterShift] = useState('');
 
   const load = async () => {
     setLoading(true);
     try {
       const [empsData, brData] = await Promise.all([
-        api.getEmployees(page, 20, filterBranchId),
+        api.getEmployees(page, 20, filterBranchId, filterShift),
         api.getBranches(1, 100)
       ]);
       setEmployees(empsData.employees);
@@ -34,18 +47,18 @@ export default function Employees() {
     }
   };
 
-  useEffect(() => { load(); }, [page, filterBranchId]);
+  useEffect(() => { load(); }, [page, filterBranchId, filterShift]);
 
   const openCreate = () => {
     setEditId(null);
-    setForm({ name: '', dailyPay: '', branchId: user?.branchId || '' });
+    setForm({ name: '', dailyPay: '', branchId: user?.branchId || '', shift: 'MORNING' });
     setError('');
     setShowModal(true);
   };
 
   const openEdit = (emp) => {
     setEditId(emp.id);
-    setForm({ name: emp.name, dailyPay: String(emp.dailyPay), branchId: emp.branchId });
+    setForm({ name: emp.name, dailyPay: String(emp.dailyPay), branchId: emp.branchId, shift: emp.shift || 'MORNING' });
     setError('');
     setShowModal(true);
   };
@@ -56,12 +69,13 @@ export default function Employees() {
     setSaving(true);
     try {
       if (editId) {
-        await api.updateEmployee(editId, { name: form.name, dailyPay: parseFloat(form.dailyPay) });
+        await api.updateEmployee(editId, { name: form.name, dailyPay: parseFloat(form.dailyPay), shift: form.shift });
       } else {
         await api.createEmployee({
           name: form.name,
           dailyPay: parseFloat(form.dailyPay),
           branchId: form.branchId,
+          shift: form.shift,
         });
       }
       setShowModal(false);
@@ -87,7 +101,7 @@ export default function Employees() {
     <>
       <div className="page-header">
         <h1>Employees</h1>
-        <p>Manage bakery staff and daily pay rates</p>
+        <p>Manage bakery staff, shifts, and daily pay rates</p>
       </div>
       <div className="page-content fade-in">
         <div className="toolbar">
@@ -102,6 +116,17 @@ export default function Employees() {
               {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           )}
+
+          <select
+            className="form-input"
+            value={filterShift}
+            onChange={(e) => { setFilterShift(e.target.value); setPage(1); }}
+            style={{ maxWidth: 160 }}
+          >
+            <option value="">All Shifts</option>
+            {SHIFT_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+
           <div className="badge badge-gold" style={{ padding: '8px 12px' }}>
             {pagination.total} EMPLOYEES
           </div>
@@ -123,6 +148,7 @@ export default function Employees() {
                 <thead>
                   <tr>
                     <th>Name</th>
+                    <th>Shift</th>
                     <th>Daily Pay</th>
                     <th>Branch</th>
                     <th>Actions</th>
@@ -132,6 +158,11 @@ export default function Employees() {
                   {(employees || []).map((emp) => (
                     <tr key={emp.id}>
                       <td data-label="Name" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{emp.name}</td>
+                      <td data-label="Shift">
+                        <span className={`badge ${SHIFT_BADGES[emp.shift]?.className || 'badge-info'}`}>
+                          {SHIFT_BADGES[emp.shift]?.label || emp.shift}
+                        </span>
+                      </td>
                       <td data-label="Daily Pay">₦{emp.dailyPay.toLocaleString()}</td>
                       <td data-label="Branch"><span className="badge badge-gold">{(emp.branch || {}).name || '—'}</span></td>
                       <td data-label="Actions">
@@ -197,6 +228,19 @@ export default function Employees() {
                     onChange={(e) => setForm({ ...form, dailyPay: e.target.value })}
                     required
                   />
+                </div>
+                <div className="form-group">
+                  <label>Shift</label>
+                  <select
+                    className="form-input"
+                    value={form.shift}
+                    onChange={(e) => setForm({ ...form, shift: e.target.value })}
+                    required
+                  >
+                    {SHIFT_OPTIONS.map(s => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
                 </div>
                 {user?.role === 'SUPER_ADMIN' && !editId && (
                   <div className="form-group">

@@ -9,20 +9,26 @@ const router = express.Router();
 // POST /api/payroll/generate
 router.post('/generate', authenticate, requireRole('SUPER_ADMIN'), async (req, res) => {
   try {
-    const { startDate, endDate, branchId } = req.body;
+    const { startDate, endDate, branchId, shift } = req.body;
     const targetBranch = req.user.role === 'SUPER_ADMIN' ? branchId : req.user.branchId;
 
     if (!startDate || !endDate || !targetBranch) {
       return res.status(400).json({ error: 'Start date, end date, and branch are required' });
     }
 
-    // Get all attendance records for this range and branch
+    // Build attendance filter
+    const attWhere = {
+      branchId: targetBranch,
+      date: { gte: startDate, lte: endDate },
+      present: true,
+    };
+    if (shift && shift !== 'ALL') {
+      attWhere.shift = shift;
+    }
+
+    // Get all attendance records for this range and branch (and optional shift)
     const attendance = await prisma.attendance.findMany({
-      where: {
-        branchId: targetBranch,
-        date: { gte: startDate, lte: endDate },
-        present: true,
-      },
+      where: attWhere,
       include: {
         employee: { select: { id: true, dailyPay: true } }
       }
@@ -40,15 +46,17 @@ router.post('/generate', authenticate, requireRole('SUPER_ADMIN'), async (req, r
       employeeAggregation[a.employeeId].totalPay += wage;
     });
 
-    // Get all employees for this branch
-    const employees = await prisma.employee.findMany({
-      where: { branchId: targetBranch, deletedAt: null },
-    });
+    // Build employee filter matching shift
+    const empWhere = { branchId: targetBranch, deletedAt: null };
+    if (shift && shift !== 'ALL') {
+      empWhere.OR = [
+        { shift: shift },
+        { shift: 'BOTH' },
+      ];
+    }
 
-    const employeeMap = {};
-    employees.forEach((e) => {
-      employeeMap[e.id] = e;
-    });
+    // Get all employees for this branch (and optional shift)
+    const employees = await prisma.employee.findMany({ where: empWhere });
 
     // Calculate payroll items
     let totalAmount = 0;
@@ -77,15 +85,17 @@ router.post('/generate', authenticate, requireRole('SUPER_ADMIN'), async (req, r
         startDate,
         endDate,
         branchId: targetBranch,
+        shift: (shift && shift !== 'ALL') ? shift : null,
         totalAmount,
         items: {
           create: items,
         },
       },
       include: {
+        branch: { select: { name: true } },
         items: {
           include: {
-            employee: { select: { name: true, dailyPay: true } },
+            employee: { select: { name: true, dailyPay: true, shift: true } },
           },
         },
       },
@@ -96,7 +106,7 @@ router.post('/generate', authenticate, requireRole('SUPER_ADMIN'), async (req, r
       action: 'GENERATE_PAYROLL',
       entityType: 'Payroll',
       entityId: payroll.id,
-      metadata: { startDate, endDate, branchId: targetBranch, totalAmount, employeeCount: items.length },
+      metadata: { startDate, endDate, branchId: targetBranch, shift: shift || 'ALL', totalAmount, employeeCount: items.length },
     });
 
     res.status(201).json(payroll);
@@ -106,16 +116,19 @@ router.post('/generate', authenticate, requireRole('SUPER_ADMIN'), async (req, r
   }
 });
 
-// GET /api/payroll?startDate=&endDate=&branchId=&page=&limit=
+// GET /api/payroll?startDate=&endDate=&branchId=&shift=&page=&limit=
 router.get('/', authenticate, requireRole('SUPER_ADMIN'), async (req, res) => {
   try {
-    const { branchId, page = 1, limit = 20 } = req.query;
+    const { branchId, shift, page = 1, limit = 20 } = req.query;
     const p = parseInt(page);
     const l = parseInt(limit);
 
     const where = {};
     if (req.user.role === 'SUPER_ADMIN' && branchId) {
       where.branchId = branchId;
+    }
+    if (shift && shift !== 'ALL') {
+      where.shift = shift;
     }
 
     const [payrolls, total] = await Promise.all([
@@ -125,7 +138,7 @@ router.get('/', authenticate, requireRole('SUPER_ADMIN'), async (req, res) => {
           branch: { select: { name: true } },
           items: {
             include: {
-              employee: { select: { name: true, dailyPay: true } },
+              employee: { select: { name: true, dailyPay: true, shift: true } },
             },
           },
         },
@@ -147,6 +160,52 @@ router.get('/', authenticate, requireRole('SUPER_ADMIN'), async (req, res) => {
     });
   } catch (err) {
     console.error('Get payroll error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/payroll/:id/detailed-data – get all attendance for detailed PDF
+router.get('/:id/detailed-data', authenticate, requireRole('SUPER_ADMIN'), async (req, res) => {
+  try {
+    const payroll = await prisma.payroll.findUnique({
+      where: { id: req.params.id },
+      include: {
+        branch: { select: { name: true } },
+        items: {
+          include: {
+            employee: { select: { id: true, name: true, dailyPay: true, shift: true } },
+          },
+        },
+      },
+    });
+
+    if (!payroll) {
+      return res.status(404).json({ error: 'Payroll not found' });
+    }
+
+    // Build attendance filter matching the payroll period
+    const attWhere = {
+      branchId: payroll.branchId,
+      date: { gte: payroll.startDate, lte: payroll.endDate },
+      present: true,
+    };
+    if (payroll.shift) {
+      attWhere.shift = payroll.shift;
+    }
+
+    // Fetch all matching attendance records
+    const attendanceRecords = await prisma.attendance.findMany({
+      where: attWhere,
+      include: {
+        employee: { select: { name: true, dailyPay: true, shift: true } },
+        markedBy: { select: { email: true } },
+      },
+      orderBy: [{ employee: { name: 'asc' } }, { date: 'asc' }],
+    });
+
+    res.json({ payroll, attendanceRecords });
+  } catch (err) {
+    console.error('Get payroll detailed data error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -44,9 +44,10 @@ export const api = {
   toggleUser: (id) => request(`/users/${id}/toggle-active`, { method: 'PATCH' }),
 
   // Employees
-  getEmployees: (page = 1, limit = 20, branchId = '') => {
+  getEmployees: (page = 1, limit = 20, branchId = '', shift = '') => {
     let url = `/employees?page=${page}&limit=${limit}`;
     if (branchId) url += `&branchId=${branchId}`;
+    if (shift) url += `&shift=${shift}`;
     return request(url);
   },
   createEmployee: (data) => request('/employees', { method: 'POST', body: JSON.stringify(data) }),
@@ -54,23 +55,39 @@ export const api = {
   deleteEmployee: (id) => request(`/employees/${id}`, { method: 'DELETE' }),
 
   // Attendance
-  getAttendance: (date, branchId) => {
+  getAttendance: (date, branchId, shift = '') => {
     let url = `/attendance?date=${date}`;
     if (branchId) url += `&branchId=${branchId}`;
+    if (shift) url += `&shift=${shift}`;
+    return request(url);
+  },
+  getAttendanceDetail: (id) => request(`/attendance/${id}`),
+  searchAttendance: (filters = {}, page = 1, limit = 20) => {
+    let url = `/attendance/search?page=${page}&limit=${limit}`;
+    Object.entries(filters).forEach(([key, val]) => {
+      if (val) url += `&${key}=${encodeURIComponent(val)}`;
+    });
     return request(url);
   },
   markAttendance: (data) => request('/attendance', { method: 'POST', body: JSON.stringify(data) }),
   lockAttendance: (data) => request('/attendance/lock', { method: 'POST', body: JSON.stringify(data) }),
 
+  // Task Types
+  getTaskTypes: () => request('/task-types'),
+  createTaskType: (data) => request('/task-types', { method: 'POST', body: JSON.stringify(data) }),
+  deleteTaskType: (id) => request(`/task-types/${id}`, { method: 'DELETE' }),
+
   // Payroll
-  getPayroll: (startDate, endDate, branchId, page = 1, limit = 20) => {
+  getPayroll: (startDate, endDate, branchId, page = 1, limit = 20, shift = '') => {
     let url = `/payroll?page=${page}&limit=${limit}`;
     if (startDate) url += `&startDate=${startDate}`;
     if (endDate) url += `&endDate=${endDate}`;
     if (branchId) url += `&branchId=${branchId}`;
+    if (shift) url += `&shift=${shift}`;
     return request(url);
   },
   generatePayroll: (data) => request('/payroll/generate', { method: 'POST', body: JSON.stringify(data) }),
+  getPayrollDetailedData: (id) => request(`/payroll/${id}/detailed-data`),
 
   // Audit Logs
   getAuditLogs: (page = 1, limit = 20, filters = {}) => {

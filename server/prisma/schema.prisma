@@ -39,6 +39,7 @@ model Employee {
   id        String    @id @default(uuid())
   name      String
   dailyPay  Float
+  shift     String    @default("MORNING") // MORNING | EVENING | BOTH
   branchId  String
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -49,20 +50,24 @@ model Employee {
 }
 
 model Attendance {
-  id         String   @id @default(uuid())
-  employeeId String
-  branchId   String
-  date       String   // YYYY-MM-DD
-  present    Boolean
-  dailyWage  Float?
-  markedById String
-  createdAt  DateTime @default(now())
+  id            String   @id @default(uuid())
+  employeeId    String
+  branchId      String
+  date          String   // YYYY-MM-DD
+  shift         String   @default("MORNING") // MORNING | EVENING
+  present       Boolean
+  dailyWage     Float?
+  taskPerformed String?  // e.g. "Mixing", "Packaging", or custom text
+  remark        String?  // optional admin note / justification
+  markedById    String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 
   employee Employee @relation(fields: [employeeId], references: [id])
   branch   Branch   @relation(fields: [branchId], references: [id])
   markedBy User     @relation("MarkedBy", fields: [markedById], references: [id])
 
-  @@unique([employeeId, date])
+  @@unique([employeeId, date, shift])
 }
 
 model AttendanceLock {
@@ -80,6 +85,7 @@ model Payroll {
   startDate   String   // YYYY-MM-DD
   endDate     String   // YYYY-MM-DD
   branchId    String
+  shift       String?  // null = all shifts, "MORNING" or "EVENING"
   totalAmount Float
   createdAt   DateTime @default(now())
 
@@ -96,6 +102,12 @@ model PayrollItem {
 
   payroll  Payroll  @relation(fields: [payrollId], references: [id])
   employee Employee @relation(fields: [employeeId], references: [id])
+}
+
+model TaskType {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
 }
 
 model AuditLog {

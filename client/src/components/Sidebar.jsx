@@ -6,9 +6,11 @@ const NAV_ITEMS = [
   { to: '/branches', label: 'Branches', icon: '🏪', roles: ['SUPER_ADMIN'] },
   { to: '/employees', label: 'Employees', icon: '👥', roles: ['SUPER_ADMIN', 'ADMIN'] },
   { to: '/attendance', label: 'Attendance', icon: '📋', roles: ['SUPER_ADMIN', 'ADMIN'] },
+  { to: '/attendance/search', label: 'Search Attendance', icon: '🔍', roles: ['SUPER_ADMIN', 'ADMIN'] },
   { to: '/payroll', label: 'Payroll', icon: '💰', roles: ['SUPER_ADMIN'] },
   { to: '/audit-logs', label: 'Audit Logs', icon: '📝', roles: ['SUPER_ADMIN'] },
   { to: '/users', label: 'Users', icon: '👤', roles: ['SUPER_ADMIN'] },
+  { to: '/task-types', label: 'Task Types', icon: '📋', roles: ['SUPER_ADMIN'] },
 ];
 
 export default function Sidebar({ open, onClose }) {

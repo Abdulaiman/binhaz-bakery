@@ -10,6 +10,7 @@ const employeeRoutes = require('./routes/employees');
 const attendanceRoutes = require('./routes/attendance');
 const payrollRoutes = require('./routes/payroll');
 const auditRoutes = require('./routes/audit');
+const taskTypeRoutes = require('./routes/taskTypes');
 const { authenticate } = require('./middleware/auth');
 
 const app = express();
@@ -27,6 +28,7 @@ app.use('/api/employees', employeeRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/audit-logs', auditRoutes);
+app.use('/api/task-types', taskTypeRoutes);
 
 // Dashboard stats endpoint
 app.get('/api/dashboard', authenticate, async (req, res) => {

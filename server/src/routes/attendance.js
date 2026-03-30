@@ -9,10 +9,15 @@ const router = express.Router();
 // POST /api/attendance – bulk mark attendance
 router.post('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, res) => {
   try {
-    const { date, records } = req.body;
-    // records: [{ employeeId, present }]
-    if (!date || !records || !Array.isArray(records)) {
-      return res.status(400).json({ error: 'Date and records array are required' });
+    const { date, shift, records } = req.body;
+    // records: [{ employeeId, present, dailyWage?, taskPerformed?, remark? }]
+    if (!date || !shift || !records || !Array.isArray(records)) {
+      return res.status(400).json({ error: 'Date, shift, and records array are required' });
+    }
+
+    const validShifts = ['MORNING', 'EVENING'];
+    if (!validShifts.includes(shift)) {
+      return res.status(400).json({ error: 'Shift must be MORNING or EVENING' });
     }
 
     const branchId = req.user.role === 'SUPER_ADMIN'
@@ -37,22 +42,28 @@ router.post('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, 
       try {
         const att = await prisma.attendance.upsert({
           where: {
-            employeeId_date: {
+            employeeId_date_shift: {
               employeeId: record.employeeId,
               date,
+              shift,
             },
           },
           create: {
             employeeId: record.employeeId,
             branchId,
             date,
+            shift,
             present: record.present,
             dailyWage: record.dailyWage,
+            taskPerformed: record.taskPerformed || null,
+            remark: record.remark || null,
             markedById: req.user.id,
           },
           update: {
             present: record.present,
             dailyWage: record.dailyWage,
+            taskPerformed: record.taskPerformed || null,
+            remark: record.remark || null,
             markedById: req.user.id,
           },
         });
@@ -68,9 +79,12 @@ router.post('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, 
       entityType: 'Attendance',
       metadata: { 
         date, 
+        shift,
         branchId, 
         count: results.length,
-        lockBypassed: !!lock && req.user.role === 'SUPER_ADMIN'
+        lockBypassed: !!lock && req.user.role === 'SUPER_ADMIN',
+        tasksRecorded: results.filter(r => r.taskPerformed).length,
+        remarksRecorded: results.filter(r => r.remark).length,
       },
     });
 
@@ -81,10 +95,10 @@ router.post('/', authenticate, requireRole('SUPER_ADMIN', 'ADMIN'), async (req, 
   }
 });
 
-// GET /api/attendance?date=YYYY-MM-DD&branchId=
+// GET /api/attendance?date=YYYY-MM-DD&branchId=&shift=
 router.get('/', authenticate, async (req, res) => {
   try {
-    const { date, branchId } = req.query;
+    const { date, branchId, shift } = req.query;
     if (!date) return res.status(400).json({ error: 'Date is required' });
 
     const targetBranch = req.user.role === 'SUPER_ADMIN'
@@ -93,11 +107,12 @@ router.get('/', authenticate, async (req, res) => {
 
     const where = { date };
     if (targetBranch) where.branchId = targetBranch;
+    if (shift && shift !== 'ALL') where.shift = shift;
 
     const attendance = await prisma.attendance.findMany({
       where,
       include: {
-        employee: { select: { name: true, dailyPay: true } },
+        employee: { select: { name: true, dailyPay: true, shift: true } },
         markedBy: { select: { email: true } },
       },
       orderBy: { employee: { name: 'asc' } },
@@ -115,6 +130,88 @@ router.get('/', authenticate, async (req, res) => {
     res.json({ attendance, locked });
   } catch (err) {
     console.error('Get attendance error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/attendance/search?employeeName=&shift=&taskPerformed=&dateFrom=&dateTo=&branchId=&page=&limit=
+router.get('/search', authenticate, async (req, res) => {
+  try {
+    const { employeeName, shift, taskPerformed, dateFrom, dateTo, branchId, page = 1, limit = 20 } = req.query;
+    const p = parseInt(page);
+    const l = parseInt(limit);
+
+    const targetBranch = req.user.role === 'SUPER_ADMIN' ? branchId : req.user.branchId;
+
+    const where = {};
+    if (targetBranch) where.branchId = targetBranch;
+    if (shift && shift !== 'ALL') where.shift = shift;
+    if (taskPerformed) where.taskPerformed = { contains: taskPerformed };
+    if (dateFrom && dateTo) {
+      where.date = { gte: dateFrom, lte: dateTo };
+    } else if (dateFrom) {
+      where.date = { gte: dateFrom };
+    } else if (dateTo) {
+      where.date = { lte: dateTo };
+    }
+    if (employeeName) {
+      where.employee = { name: { contains: employeeName } };
+    }
+
+    const [records, total] = await Promise.all([
+      prisma.attendance.findMany({
+        where,
+        include: {
+          employee: { select: { name: true, dailyPay: true, shift: true } },
+          branch: { select: { name: true } },
+          markedBy: { select: { email: true } },
+        },
+        orderBy: [{ date: 'desc' }, { shift: 'asc' }],
+        skip: (p - 1) * l,
+        take: l,
+      }),
+      prisma.attendance.count({ where }),
+    ]);
+
+    res.json({
+      records,
+      pagination: {
+        page: p,
+        limit: l,
+        total,
+        pages: Math.ceil(total / l),
+      },
+    });
+  } catch (err) {
+    console.error('Search attendance error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/attendance/:id – single attendance detail
+router.get('/:id', authenticate, async (req, res) => {
+  try {
+    const record = await prisma.attendance.findUnique({
+      where: { id: req.params.id },
+      include: {
+        employee: { select: { name: true, dailyPay: true, shift: true, branch: { select: { name: true } } } },
+        branch: { select: { name: true } },
+        markedBy: { select: { email: true } },
+      },
+    });
+
+    if (!record) {
+      return res.status(404).json({ error: 'Attendance record not found' });
+    }
+
+    // Branch scoping for ADMIN
+    if (req.user.role === 'ADMIN' && record.branchId !== req.user.branchId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    res.json(record);
+  } catch (err) {
+    console.error('Get attendance detail error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

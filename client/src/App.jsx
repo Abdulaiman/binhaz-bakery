@@ -12,6 +12,8 @@ import Attendance from './pages/Attendance';
 import Payroll from './pages/Payroll';
 import AuditLogs from './pages/AuditLogs';
 import Users from './pages/Users';
+import AttendanceSearch from './pages/AttendanceSearch';
+import TaskTypes from './pages/TaskTypes';
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -48,6 +50,7 @@ function AppRoutes() {
         />
         <Route path="/employees" element={<Employees />} />
         <Route path="/attendance" element={<Attendance />} />
+        <Route path="/attendance/search" element={<AttendanceSearch />} />
         <Route
           path="/payroll"
           element={
@@ -69,6 +72,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute roles={['SUPER_ADMIN']}>
               <Users />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/task-types"
+          element={
+            <ProtectedRoute roles={['SUPER_ADMIN']}>
+              <TaskTypes />
             </ProtectedRoute>
           }
         />

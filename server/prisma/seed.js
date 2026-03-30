@@ -28,6 +28,17 @@ async function main() {
 
   console.log(`SUPER_ADMIN created: ${email}`);
   console.log(`Temporary password: ${password}`);
+
+  // Seed default task types
+  const defaultTasks = ['Mixing', 'Baking', 'Packaging', 'Decorating', 'Cleaning', 'Delivery'];
+  for (const name of defaultTasks) {
+    await prisma.taskType.upsert({
+      where: { name },
+      create: { name },
+      update: {},
+    });
+  }
+  console.log(`Seeded ${defaultTasks.length} default task types.`);
 }
 
 main()

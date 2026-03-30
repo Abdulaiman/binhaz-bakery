@@ -6,6 +6,7 @@ import { enqueueAttendance, syncOfflineAttendance, getQueuedAttendance } from '.
 export default function Attendance() {
   const { user } = useAuth();
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [shift, setShift] = useState('MORNING');
   const [employees, setEmployees] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [page, setPage] = useState(1);
@@ -17,18 +18,20 @@ export default function Attendance() {
   const [selectedBranch, setSelectedBranch] = useState(user?.branchId || '');
   const [message, setMessage] = useState('');
   const [queueCount, setQueueCount] = useState(0);
+  const [taskTypes, setTaskTypes] = useState([]);
+  const [expandedEmp, setExpandedEmp] = useState(null);
 
   useEffect(() => {
     if (user?.role === 'SUPER_ADMIN') {
       api.getBranches(1, 100).then(data => setBranches(data.branches)).catch(console.error);
     }
-    // Check offline queue
+    api.getTaskTypes().then(data => setTaskTypes(data.taskTypes || [])).catch(console.error);
     getQueuedAttendance().then((q) => setQueueCount(q.length)).catch(() => {});
   }, []);
 
   useEffect(() => {
     loadData();
-  }, [date, selectedBranch, page]);
+  }, [date, selectedBranch, shift, page]);
 
   const loadData = async () => {
     setLoading(true);
@@ -43,25 +46,31 @@ export default function Attendance() {
       }
       
       const [empsData, attData] = await Promise.all([
-        api.getEmployees(page, 20, branchId),
-        api.getAttendance(date, branchId),
+        api.getEmployees(page, 20, branchId, shift),
+        api.getAttendance(date, branchId, shift),
       ]);
       setEmployees(empsData.employees || []);
       setPagination(empsData.pagination || { total: 0, pages: 1, page: 1 });
       setLocked(attData.locked);
 
-      // Build attendance map with wages
+      // Build attendance map with wages, tasks, remarks
       const attMap = {};
       attData.attendance.forEach((a) => {
         attMap[a.employeeId] = { 
           present: a.present, 
-          wage: a.dailyWage !== null ? a.dailyWage : a.employee.dailyPay 
+          wage: a.dailyWage !== null ? a.dailyWage : a.employee.dailyPay,
+          taskPerformed: a.taskPerformed || '',
+          remark: a.remark || '',
+          markedBy: a.markedBy?.email || '',
+          createdAt: a.createdAt,
+          updatedAt: a.updatedAt,
+          id: a.id,
         };
       });
-      // For employees not in attData but in employees list, initialize with default pay
+      // For employees not in attData, initialize with defaults
       empsData.employees.forEach(emp => {
         if (!attMap[emp.id]) {
-          attMap[emp.id] = { present: false, wage: emp.dailyPay };
+          attMap[emp.id] = { present: false, wage: emp.dailyPay, taskPerformed: '', remark: '' };
         }
       });
       setAttendance(attMap);
@@ -94,6 +103,22 @@ export default function Attendance() {
     }));
   };
 
+  const handleTaskChange = (empId, task) => {
+    if (locked && user?.role !== 'SUPER_ADMIN') return;
+    setAttendance((prev) => ({
+      ...prev,
+      [empId]: { ...prev[empId], taskPerformed: task },
+    }));
+  };
+
+  const handleRemarkChange = (empId, remark) => {
+    if (locked && user?.role !== 'SUPER_ADMIN') return;
+    setAttendance((prev) => ({
+      ...prev,
+      [empId]: { ...prev[empId], remark },
+    }));
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setMessage('');
@@ -101,10 +126,12 @@ export default function Attendance() {
     const records = employees.map((emp) => ({
       employeeId: emp.id,
       present: !!attendance[emp.id]?.present,
-      dailyWage: attendance[emp.id]?.wage ?? emp.dailyPay
+      dailyWage: attendance[emp.id]?.wage ?? emp.dailyPay,
+      taskPerformed: attendance[emp.id]?.taskPerformed || null,
+      remark: attendance[emp.id]?.remark || null,
     }));
 
-    const payload = { date, branchId, records };
+    const payload = { date, shift, branchId, records };
 
     try {
       if (!navigator.onLine) {
@@ -150,15 +177,16 @@ export default function Attendance() {
   };
 
   const presentCountOnPage = employees.filter(emp => !!attendance[emp.id]?.present).length;
+  const isDisabled = locked && user?.role !== 'SUPER_ADMIN';
 
   return (
     <>
       <div className="page-header">
         <h1>Attendance</h1>
-        <p>Mark daily attendance for employees</p>
+        <p>Mark daily attendance by shift for employees</p>
       </div>
       <div className="page-content fade-in">
-        <div className="toolbar">
+        <div className="toolbar" style={{ flexWrap: 'wrap', gap: '8px' }}>
           <div className="filter-item">
             <span>Date:</span>
             <input
@@ -169,6 +197,43 @@ export default function Attendance() {
               style={{ maxWidth: 180 }}
             />
           </div>
+
+          <div className="shift-toggle" style={{ display: 'flex', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+            <button
+              type="button"
+              onClick={() => { setShift('MORNING'); setPage(1); }}
+              style={{
+                padding: '8px 16px',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                background: shift === 'MORNING' ? 'var(--gold)' : 'var(--bg-card)',
+                color: shift === 'MORNING' ? 'var(--bg-primary)' : 'var(--text-secondary)',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              🌅 Morning
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShift('EVENING'); setPage(1); }}
+              style={{
+                padding: '8px 16px',
+                border: 'none',
+                borderLeft: '1px solid var(--border-color)',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                background: shift === 'EVENING' ? 'var(--gold)' : 'var(--bg-card)',
+                color: shift === 'EVENING' ? 'var(--bg-primary)' : 'var(--text-secondary)',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              🌙 Evening
+            </button>
+          </div>
+
           {user?.role === 'SUPER_ADMIN' && (
             <select
               className="form-input"
@@ -219,67 +284,163 @@ export default function Attendance() {
         ) : (employees || []).length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">📋</div>
-            <p>No employees found for this branch.</p>
+            <p>No employees found for this branch and shift.</p>
           </div>
         ) : (
           <>
             <div style={{ marginBottom: 16, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              {presentCountOnPage}/{employees.length} present on this page ({pagination.total} total employees)
+              {presentCountOnPage}/{employees.length} present on this page ({pagination.total} total employees) • {shift === 'MORNING' ? '🌅 Morning' : '🌙 Evening'} Shift
             </div>
 
             <div className="attendance-grid">
-              {(employees || []).map((emp) => (
-                <div
-                  key={emp.id}
-                  className={`attendance-row ${attendance[emp.id]?.present ? 'active' : ''}`}
-                  onClick={() => toggleAttendance(emp.id)}
-                  style={{ 
-                    cursor: (locked && user?.role !== 'SUPER_ADMIN') ? 'default' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '12px',
-                    borderRadius: 'var(--radius-md)',
-                    marginBottom: '8px',
-                    background: attendance[emp.id]?.present ? 'rgba(212, 175, 55, 0.1)' : 'var(--bg-card)',
-                    border: attendance[emp.id]?.present ? '1px solid var(--gold)' : '1px solid transparent'
-                  }}
-                >
-                  <label className="checkbox-wrapper" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={!!attendance[emp.id]?.present}
-                      onChange={() => toggleAttendance(emp.id)}
-                      disabled={locked && user?.role !== 'SUPER_ADMIN'}
-                    />
-                  </label>
-                  <span className="emp-name" style={{ flex: 1, marginLeft: '12px', fontWeight: 600 }}>{emp.name}</span>
-                  
-                  <div className="emp-pay-control" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Pay: ₦</span>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={attendance[emp.id]?.wage ?? emp.dailyPay}
-                      onChange={(e) => handleWageChange(emp.id, e.target.value)}
-                      disabled={locked && user?.role !== 'SUPER_ADMIN'}
-                      style={{ 
-                        width: '90px', 
-                        padding: '4px 8px', 
-                        fontSize: '0.9rem',
-                        textAlign: 'right',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '4px'
+              {(employees || []).map((emp) => {
+                const att = attendance[emp.id] || {};
+                const isExpanded = expandedEmp === emp.id;
+                return (
+                  <div
+                    key={emp.id}
+                    className={`attendance-card ${att.present ? 'active' : ''}`}
+                    style={{
+                      borderRadius: 'var(--radius-md)',
+                      marginBottom: '10px',
+                      background: att.present ? 'rgba(212, 175, 55, 0.08)' : 'var(--bg-card)',
+                      border: att.present ? '1px solid var(--gold)' : '1px solid var(--border-color)',
+                      overflow: 'hidden',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    {/* Main row */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '12px',
+                        cursor: isDisabled ? 'default' : 'pointer',
+                        gap: '10px',
+                        flexWrap: 'wrap',
                       }}
-                    />
-                  </div>
+                      onClick={() => toggleAttendance(emp.id)}
+                    >
+                      <label className="checkbox-wrapper" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={!!att.present}
+                          onChange={() => toggleAttendance(emp.id)}
+                          disabled={isDisabled}
+                        />
+                      </label>
+                      <span style={{ flex: 1, fontWeight: 600, minWidth: '120px' }}>{emp.name}</span>
+                      
+                      {emp.shift === 'BOTH' && (
+                        <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>🔄 Both</span>
+                      )}
 
-                  {locked && user?.role !== 'SUPER_ADMIN' && (
-                    <span className={`badge ${attendance[emp.id]?.present ? 'badge-success' : 'badge-error'}`} style={{ marginLeft: '12px' }}>
-                      {attendance[emp.id]?.present ? 'Present' : 'Absent'}
-                    </span>
-                  )}
-                </div>
-              ))}
+                      <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>₦</span>
+                        <input
+                          type="number"
+                          className="form-input"
+                          value={att.wage ?? emp.dailyPay}
+                          onChange={(e) => handleWageChange(emp.id, e.target.value)}
+                          disabled={isDisabled}
+                          style={{ 
+                            width: '85px', padding: '4px 8px', fontSize: '0.85rem',
+                            textAlign: 'right', border: '1px solid var(--border-color)', borderRadius: '4px'
+                          }}
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={(e) => { e.stopPropagation(); setExpandedEmp(isExpanded ? null : emp.id); }}
+                        style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                      >
+                        {isExpanded ? '▲ Less' : '▼ More'}
+                      </button>
+                    </div>
+
+                    {/* Expanded detail section */}
+                    {isExpanded && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          padding: '12px 16px',
+                          borderTop: '1px solid var(--border-color)',
+                          background: 'rgba(0,0,0,0.15)',
+                        }}
+                      >
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>
+                              Task Performed
+                            </label>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <select
+                                className="form-input"
+                                value={taskTypes.some(t => t.name === att.taskPerformed) ? att.taskPerformed : (att.taskPerformed ? '__OTHER__' : '')}
+                                onChange={(e) => {
+                                  if (e.target.value === '__OTHER__') {
+                                    handleTaskChange(emp.id, '');
+                                  } else {
+                                    handleTaskChange(emp.id, e.target.value);
+                                  }
+                                }}
+                                disabled={isDisabled}
+                                style={{ flex: 1, minWidth: '140px' }}
+                              >
+                                <option value="">-- Select task --</option>
+                                {taskTypes.map(t => (
+                                  <option key={t.id} value={t.name}>{t.name}</option>
+                                ))}
+                                <option value="__OTHER__">Other (custom)</option>
+                              </select>
+                              {(!taskTypes.some(t => t.name === att.taskPerformed) && att.taskPerformed !== '') || 
+                               (att.taskPerformed === '') ? null : null}
+                              {/* Show custom input if "Other" is selected or if the value doesn't match any preset */}
+                              {(att.taskPerformed !== '' && !taskTypes.some(t => t.name === att.taskPerformed)) && (
+                                <input
+                                  className="form-input"
+                                  placeholder="Describe task..."
+                                  value={att.taskPerformed}
+                                  onChange={(e) => handleTaskChange(emp.id, e.target.value)}
+                                  disabled={isDisabled}
+                                  style={{ flex: 1, minWidth: '140px' }}
+                                />
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px', display: 'block' }}>
+                              Remark (optional)
+                            </label>
+                            <textarea
+                              className="form-input"
+                              placeholder="e.g. Paid extra for overtime, late arrival, etc."
+                              value={att.remark || ''}
+                              onChange={(e) => handleRemarkChange(emp.id, e.target.value)}
+                              disabled={isDisabled}
+                              rows={2}
+                              style={{ resize: 'vertical', width: '100%' }}
+                            />
+                          </div>
+
+                          {/* Show audit info if record exists */}
+                          {att.markedBy && (
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-color)', paddingTop: '8px' }}>
+                              <span>Marked by: <strong>{att.markedBy}</strong></span>
+                              {att.updatedAt && (
+                                <span style={{ marginLeft: '12px' }}>Last updated: {new Date(att.updatedAt).toLocaleString()}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {pagination.pages > 1 && (
@@ -313,7 +474,7 @@ export default function Attendance() {
                   style={{ width: '100%' }}
                 >
                   {saving ? <span className="spinner" /> : (
-                    locked ? `Save Changes (Override Lock)` : `Save Page ${page} (${presentCountOnPage} present)`
+                    locked ? `Save Changes (Override Lock)` : `Save ${shift} Shift — Page ${page} (${presentCountOnPage} present)`
                   )}
                 </button>
               </div>
