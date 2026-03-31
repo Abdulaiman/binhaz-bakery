@@ -1,4 +1,23 @@
 require('dotenv').config();
+const { execSync } = require('child_process');
+
+// Database reset trigger for production (since Railway terminal can be hard to find)
+if (process.env.RESET_DATABASE === 'true') {
+  console.log('CRITICAL: RESET_DATABASE flag detected. Performing full database reset...');
+  try {
+    // Run prisma reset and seed
+    execSync('npx prisma db push --force-reset && node prisma/seed.js', { 
+      stdio: 'inherit',
+      cwd: require('path').join(__dirname, '..')
+    });
+    console.log('Database reset and seeding completed successfully.');
+  } catch (err) {
+    console.error('Failed to reset database:', err);
+    // Continue starting the app even if reset fails, or exit? 
+    // Exit might be safer to avoid partial states, but let's continue to allow the dev to see errors in logs.
+  }
+}
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
